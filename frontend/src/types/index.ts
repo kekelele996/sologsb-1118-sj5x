@@ -6,3 +6,13 @@ export { ARTIFACT_CATEGORIES, COMPLETENESS } from './artifact'
 export type { Artifact, ArtifactCategory, Completeness } from './artifact'
 export { RELATION_TYPES, RELATION_BASES } from './relation'
 export type { Relation, RelationType, RelationBasis } from './relation'
+export {
+  WALL_KEYS,
+  WALL_LABELS,
+  wallRecordId,
+  isWallRecordComplete,
+  wallStatusOf,
+  confirmedWallCount,
+  isTrenchSectionsComplete
+} from './wallRecord'
+export type { WallKey, WallRecord, WallBoundaryNote, WallStatus } from './wallRecord'

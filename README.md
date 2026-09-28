@@ -57,8 +57,8 @@ sologsb-1118/
 │   ├── nginx.conf              # try_files 前端路由回落 + gzip
 │   ├── public/favicon.svg
 │   └── src/
-│       ├── types/              # trench.ts / stratum.ts / artifact.ts / relation.ts / index.ts
-│       ├── stores/             # trenchStore / stratumStore / artifactStore / relationStore（Zustand）
+│       ├── types/              # trench.ts / stratum.ts / artifact.ts / relation.ts / wallRecord.ts / index.ts
+│       ├── stores/             # trenchStore / stratumStore / artifactStore / relationStore / wallRecordStore（Zustand）
 │       ├── components/common/  # StratumDepthBar / RelationGraph / TrenchTag / UnitPicker
 │       ├── hooks/              # useStratumOrder / useRelationGraph / usePersistentStore
 │       ├── pages/              # TrenchesPage / StrataPage / ArtifactsPage / RelationsPage / SectionsPage
@@ -74,9 +74,11 @@ sologsb-1118/
 | Stratum 地层单位 | 单位号、类型（地层/灰坑/房址/沟/墓葬）、开口层位、上下界深度、土质土色、包含物、堆积成因、绘图拍照号 | `strata` |
 | Artifact 出土物 | 所属地层单位、器物编号、类别、件数、残整程度、探方内 X/Y/Z、出土日期、提取人、临时存放 | `artifacts` |
 | Relation 层位关系 | 单位 A、关系类型（叠压/打破/共存）、单位 B、判定依据、记录人、备注 | `relations` |
+| WallRecord 四壁剖面记录 | 探方 × 北/东/南/西四壁，各维护记录人、绘图号、各地层顶底界线备注、待复核/已确认标记 | `wallRecords` |
 
 - 数据库名 `gbtrenchlog`，`meta` 表保存 `schemaVersion`；
 - `version(2)` 升级迁移会为历史地层单位补齐「开口层位」字段并规范包含物数组；
+- `version(3)` 新增 `wallRecords` 表（一探方四壁各一条，确定性主键 `wr_{trenchId}_{wall}`）；
 - 数据仅存于浏览器本地，容器无状态、不挂载命名卷。
 
 ## 六、主要页面
@@ -87,7 +89,7 @@ sologsb-1118/
 | `/strata` | 地层单位编目表：按类型与深度区间筛选，层序倒置与单位号重复即时高亮，深度刻度条展示厚度 |
 | `/artifacts` | 出土物登记与清单：先锁定所属地层单位（级联选择器），带出深度区间并校验出土深度是否在该区间内 |
 | `/relations` | 层位关系视图：SVG 有向图展示叠压/打破，点击节点高亮直接关系，新增关系前做环路检测 |
-| `/sections` | 四壁剖面示意：按深度刻度绘制地层条带与厚度标注，叠加出土物投影点 |
+| `/sections` | 四壁剖面记录：按深度刻度绘制地层条带与厚度标注，叠加出土物投影点；北/东/南/西四壁分别维护记录人、绘图号与各地层顶底界线备注，状态分待补 / 已完成待确认 / 待复核 / 已确认 |
 
 ## 七、校验规则
 
@@ -97,3 +99,11 @@ sologsb-1118/
 - 若「A 叠压/打破 B」但 A 的上界深度大于 B，则提示层位关系与深度矛盾；
 - 新增层位关系前做**环路检测**（DFS），会形成闭合矛盾的关系直接拒绝保存；
 - 出土物的 Z（深度）必须落在其所属地层单位的深度区间内，否则给出层位核对提示。
+
+### 四壁剖面记录状态规则
+
+- 每壁一条记录，含**记录人、绘图号**与探方内**各地层单位的顶界 / 底界备注**；
+- 壁状态：**待补**（未建记录或资料未填齐）→ **已完成待确认**（资料填齐）→ **已确认**；
+- 地层单位的**上界 / 下界深度被改动**（含调整所属探方）后，凡涉及该层界线的壁记录自动置为**待复核**，并撤销其确认；新增地层单位后，已确认的壁因缺新层界线备注也会回到待补；
+- 待复核壁必须在记录页「复核通过并确认」，复核前不能确认、四壁未全部确认时探方剖面不标记完成；
+- 探方清单卡片汇总**已确认壁数（x / 4）**并以四色圆点展示四壁状态，点「四壁记录」直接进入该探方剖面页。

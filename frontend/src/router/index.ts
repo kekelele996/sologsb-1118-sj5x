@@ -30,7 +30,7 @@ const routes: RouteRecordRaw[] = [
     path: '/sections',
     name: 'sections',
     component: () => import('@/pages/SectionsPage.vue'),
-    meta: { title: '四壁剖面示意' }
+    meta: { title: '四壁剖面记录' }
   },
   { path: '/:pathMatch(.*)*', redirect: '/trenches' }
 ]

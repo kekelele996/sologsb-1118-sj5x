@@ -1,20 +1,33 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { Trench } from '@/types'
-import { TRENCH_SIZES, findTrenchConflict, trenchKey } from '@/types'
+import {
+  TRENCH_SIZES,
+  WALL_KEYS,
+  WALL_LABELS,
+  confirmedWallCount,
+  findTrenchConflict,
+  isTrenchSectionsComplete,
+  trenchKey,
+  wallStatusOf
+} from '@/types'
 import TrenchTag from '@/components/common/TrenchTag.vue'
 import { useStore } from '@/hooks/usePersistentStore'
 import { trenchStore } from '@/stores/trenchStore'
 import { stratumStore } from '@/stores/stratumStore'
 import { artifactStore } from '@/stores/artifactStore'
 import { relationStore } from '@/stores/relationStore'
+import { wallRecordStore } from '@/stores/wallRecordStore'
 import { uid } from '@/utils/id'
 
+const router = useRouter()
 const trenchState = useStore(trenchStore)
 const stratumState = useStore(stratumStore)
 const artifactState = useStore(artifactStore)
 const relationState = useStore(relationStore)
+const wallState = useStore(wallRecordStore)
 
 const dialogVisible = ref(false)
 const editingId = ref<string | null>(null)
@@ -61,6 +74,37 @@ function artifactsOf(trenchId: string): number {
 function relationsOf(trenchId: string): number {
   const unitIds = stratumState.strata.filter((item) => item.trenchId === trenchId).map((item) => item.id)
   return relationState.relations.filter((item) => unitIds.includes(item.unitAId) || unitIds.includes(item.unitBId)).length
+}
+
+/** 该探方已确认的壁数 */
+function confirmedWallsOf(trenchId: string): number {
+  return confirmedWallCount(trenchId, wallState.wallRecords, stratumState.strata)
+}
+
+/** 四壁是否全部确认（剖面完成） */
+function sectionsCompleteOf(trenchId: string): boolean {
+  return isTrenchSectionsComplete(trenchId, wallState.wallRecords, stratumState.strata)
+}
+
+/** 单壁状态点颜色 */
+const WALL_DOT_TYPE: Record<string, string> = {
+  missing: '#c8c0b2',
+  incomplete: '#e6a23c',
+  ready: '#409eff',
+  review: '#f56c6c',
+  confirmed: '#67c23a'
+}
+
+function wallDotClass(trenchId: string, wallIndex: number): string {
+  const wall = WALL_KEYS[wallIndex]
+  const record = wallState.wallRecords.find((item) => item.trenchId === trenchId && item.wall === wall)
+  const trenchStrata = stratumState.strata.filter((item) => item.trenchId === trenchId)
+  return WALL_DOT_TYPE[wallStatusOf(record, trenchStrata)]
+}
+
+/** 跳转到四壁剖面记录页并预选探方 */
+function openWallRecords(trench: Trench): void {
+  void router.push({ path: '/sections', query: { trench: trench.id } })
 }
 
 /** 发掘进度状态 */
@@ -143,8 +187,9 @@ async function remove(trench: Trench): Promise<void> {
     return
   }
   await ElMessageBox.confirm(`确认删除探方「${trenchKey(trench)}」？`, '删除确认', { type: 'warning' })
+  await wallRecordStore.getState().removeByTrench(trench.id)
   await trenchStore.getState().remove(trench.id)
-  ElMessage.success('探方已删除')
+  ElMessage.success('探方及其四壁记录已删除')
 }
 </script>
 
@@ -179,10 +224,27 @@ async function remove(trench: Trench): Promise<void> {
           <div class="metric"><span>地层单位</span><b>{{ unitsOf(trench.id) }}</b></div>
           <div class="metric"><span>出土物件数</span><b>{{ artifactsOf(trench.id) }}</b></div>
           <div class="metric"><span>层位关系</span><b>{{ relationsOf(trench.id) }}</b></div>
-          <div class="metric"><span>规格</span><b>{{ trench.size }}</b></div>
+          <div class="metric" :class="{ 'metric-done': sectionsCompleteOf(trench.id) }">
+            <span>四壁已确认</span>
+            <b>{{ confirmedWallsOf(trench.id) }} / 4</b>
+          </div>
+        </div>
+        <div class="wall-dots" :title="WALL_KEYS.map((w) => WALL_LABELS[w]).join(' · ')">
+          <span
+            v-for="(w, index) in WALL_KEYS"
+            :key="w"
+            class="dot"
+            :style="{ background: wallDotClass(trench.id, index) }"
+          >
+            {{ WALL_LABELS[w].charAt(0) }}
+          </span>
+          <span class="muted">
+            {{ sectionsCompleteOf(trench.id) ? '四壁剖面已完成' : '北 / 东 / 南 / 西' }}
+          </span>
         </div>
         <el-descriptions :column="1" size="small" border class="desc">
           <el-descriptions-item label="基点坐标">{{ trench.basePoint || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="规格">{{ trench.size }}</el-descriptions-item>
           <el-descriptions-item label="开口层位">{{ trench.openLayer || '—' }}</el-descriptions-item>
           <el-descriptions-item label="发掘日期">
             {{ trench.startDate }} ~ {{ trench.endDate || '进行中' }}
@@ -192,6 +254,12 @@ async function remove(trench: Trench): Promise<void> {
         </el-descriptions>
         <div class="card-actions">
           <el-button size="small" @click="openEdit(trench)">编辑</el-button>
+          <el-button size="small" type="warning" plain @click="openWallRecords(trench)">
+            四壁记录
+            <el-tag v-if="confirmedWallsOf(trench.id) < 4" size="small" type="warning" effect="dark" round class="wall-badge">
+              待补 {{ 4 - confirmedWallsOf(trench.id) }}
+            </el-tag>
+          </el-button>
           <el-button size="small" @click="trenchStore.getState().setBackfilled(trench.id, !trench.backfilled)">
             {{ trench.backfilled ? '取消回填标记' : '标记已回填' }}
           </el-button>
@@ -298,6 +366,31 @@ async function remove(trench: Trench): Promise<void> {
 .metric b {
   font-size: 14px;
   color: #3c2f1f;
+}
+.metric-done {
+  background: #f0f8e8;
+}
+.metric-done b {
+  color: #4f8a1f;
+}
+.wall-dots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+.dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: #fff;
+}
+.wall-badge {
+  margin-left: 4px;
 }
 .desc {
   margin-bottom: 12px;

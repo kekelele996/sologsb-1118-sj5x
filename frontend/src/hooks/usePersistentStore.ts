@@ -1,22 +1,24 @@
 import { onUnmounted, reactive } from 'vue'
 import type { StoreApi } from 'zustand/vanilla'
 import Dexie, { type Table } from 'dexie'
-import type { Artifact, Relation, Stratum, Trench } from '@/types'
+import type { Artifact, Relation, Stratum, Trench, WallRecord } from '@/types'
+import { wallRecordId } from '@/types'
 
 /** IndexedDB 数据结构版本号 */
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 
 export interface MetaRow {
   key: string
   value: number
 }
 
-/** Dexie 封装：探方 / 地层单位 / 出土物 / 层位关系 四张表 + 元数据表 */
+/** Dexie 封装：探方 / 地层单位 / 出土物 / 层位关系 / 四壁记录 五张表 + 元数据表 */
 class TrenchLogDb extends Dexie {
   trenches!: Table<Trench, string>
   strata!: Table<Stratum, string>
   artifacts!: Table<Artifact, string>
   relations!: Table<Relation, string>
+  wallRecords!: Table<WallRecord, string>
   meta!: Table<MetaRow, string>
 
   constructor() {
@@ -29,7 +31,7 @@ class TrenchLogDb extends Dexie {
       meta: 'key'
     })
     // v2：地层单位新增「开口层位」字段，迁移时为历史数据补齐默认值
-    this.version(SCHEMA_VERSION)
+    this.version(2)
       .stores({
         trenches: 'id, code, area, backfilled',
         strata: 'id, trenchId, code, type, topDepth',
@@ -50,6 +52,15 @@ class TrenchLogDb extends Dexie {
             }
           })
       })
+    // v3：新增「四壁剖面记录」表，按探方 + 壁向各维护一条
+    this.version(SCHEMA_VERSION).stores({
+      trenches: 'id, code, area, backfilled',
+      strata: 'id, trenchId, code, type, topDepth',
+      artifacts: 'id, stratumId, code, category, date',
+      relations: 'id, unitAId, unitBId, type, basis',
+      wallRecords: 'id, trenchId, wall, confirmed, needsReview',
+      meta: 'key'
+    })
   }
 }
 
@@ -231,4 +242,57 @@ export async function seedDemoData(): Promise<void> {
       note: 'L01 叠压 L02，界面清晰'
     }
   ])
+
+  // T0501 北壁：已确认；东壁：已完成待确认；南壁：待复核（地层深度改动）；西壁：待补
+  const wallRows: WallRecord[] = [
+    {
+      id: wallRecordId('tr_0501', 'north'),
+      trenchId: 'tr_0501',
+      wall: 'north',
+      recorder: '祁野',
+      drawingNo: 'T0501-北壁-01',
+      boundaries: [
+        { stratumId: 'st_0501_l1', top: '地表即顶界，0 m 起', bottom: 'L01/L02 界面在 0.25 m，水平清晰' },
+        { stratumId: 'st_0501_l2', top: '0.25 m，与 L01 分界清晰', bottom: '0.60 m，下为 H12 开口' },
+        { stratumId: 'st_0501_h12', top: '0.60 m 开口于 L02 下', bottom: '1.40 m 见底，弧壁圜底' }
+      ],
+      needsReview: false,
+      confirmed: true,
+      updatedAt: today,
+      confirmedAt: today
+    },
+    {
+      id: wallRecordId('tr_0501', 'east'),
+      trenchId: 'tr_0501',
+      wall: 'east',
+      recorder: '祁野',
+      drawingNo: 'T0501-东壁-01',
+      boundaries: [
+        { stratumId: 'st_0501_l1', top: '地表 0 m', bottom: '0.25 m，界面略呈波状' },
+        { stratumId: 'st_0501_l2', top: '0.25 m', bottom: '0.60 m' },
+        { stratumId: 'st_0501_h12', top: '0.60 m 开口', bottom: '1.35 m 见底，东壁略浅' }
+      ],
+      needsReview: false,
+      confirmed: false,
+      updatedAt: today,
+      confirmedAt: ''
+    },
+    {
+      id: wallRecordId('tr_0501', 'south'),
+      trenchId: 'tr_0501',
+      wall: 'south',
+      recorder: '方铭',
+      drawingNo: 'T0501-南壁-01',
+      boundaries: [
+        { stratumId: 'st_0501_l1', top: '地表 0 m', bottom: '0.25 m，局部被扰坑截断' },
+        { stratumId: 'st_0501_l2', top: '0.25 m', bottom: '0.60 m' },
+        { stratumId: 'st_0501_h12', top: '0.60 m 开口', bottom: '1.40 m' }
+      ],
+      needsReview: true,
+      confirmed: false,
+      updatedAt: today,
+      confirmedAt: ''
+    }
+  ]
+  await db.wallRecords.bulkPut(wallRows)
 }

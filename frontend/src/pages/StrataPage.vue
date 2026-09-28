@@ -11,6 +11,7 @@ import { stratumStore } from '@/stores/stratumStore'
 import { trenchStore } from '@/stores/trenchStore'
 import { artifactStore } from '@/stores/artifactStore'
 import { relationStore } from '@/stores/relationStore'
+import { wallRecordStore } from '@/stores/wallRecordStore'
 import { uid } from '@/utils/id'
 
 const trenchState = useStore(trenchStore)
@@ -162,10 +163,27 @@ async function submit(): Promise<void> {
     date: form.date,
     drawingNo: form.drawingNo.trim()
   }
+  const previous = stratumState.strata.find((item) => item.id === row.id)
+  const depthChanged =
+    !!previous && (previous.topDepth !== row.topDepth || previous.bottomDepth !== row.bottomDepth)
+  const trenchChanged = !!previous && previous.trenchId !== row.trenchId
   await stratumStore.getState().save(row)
+  // 地层深度（或所属探方）改动后，把涉及该层界线的四壁记录标为待复核
+  if (depthChanged || trenchChanged) {
+    const oldCount = previous ? await wallRecordStore.getState().invalidateForStratum({ ...row, trenchId: previous.trenchId }) : 0
+    const newCount = trenchChanged || depthChanged ? await wallRecordStore.getState().invalidateForStratum(row) : 0
+    const wallTimes = oldCount + newCount
+    if (depthChanged && wallTimes > 0) {
+      ElMessage.warning(
+        `「${row.code}」深度已改动，涉及该层界线的四壁记录已标为待复核（共 ${wallTimes} 壁次，复核确认前不能标记剖面完成）`
+      )
+    } else if (trenchChanged && wallTimes > 0) {
+      ElMessage.warning(`「${row.code}」已调整所属探方，相关探方的四壁记录已标为待复核`)
+    }
+  }
   if (isDepthInverted(row)) {
     ElMessage.warning(`已保存，但「${row.code}」上界深度大于下界，层序倒置需复核`)
-  } else {
+  } else if (!depthChanged && !trenchChanged) {
     ElMessage.success(`地层单位 ${row.code} 已保存（厚 ${stratumThickness(row)} m）`)
   }
   dialogVisible.value = false
