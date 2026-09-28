@@ -1,22 +1,23 @@
 import { onUnmounted, reactive } from 'vue'
 import type { StoreApi } from 'zustand/vanilla'
 import Dexie, { type Table } from 'dexie'
-import type { Artifact, Relation, Stratum, Trench } from '@/types'
+import type { Artifact, Relation, Stratum, Trench, WallRecord } from '@/types'
 
 /** IndexedDB 数据结构版本号 */
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 
 export interface MetaRow {
   key: string
   value: number
 }
 
-/** Dexie 封装：探方 / 地层单位 / 出土物 / 层位关系 四张表 + 元数据表 */
+/** Dexie 封装：探方 / 地层单位 / 出土物 / 层位关系 / 四壁记录 五张表 + 元数据表 */
 class TrenchLogDb extends Dexie {
   trenches!: Table<Trench, string>
   strata!: Table<Stratum, string>
   artifacts!: Table<Artifact, string>
   relations!: Table<Relation, string>
+  wallRecords!: Table<WallRecord, string>
   meta!: Table<MetaRow, string>
 
   constructor() {
@@ -29,7 +30,7 @@ class TrenchLogDb extends Dexie {
       meta: 'key'
     })
     // v2：地层单位新增「开口层位」字段，迁移时为历史数据补齐默认值
-    this.version(SCHEMA_VERSION)
+    this.version(2)
       .stores({
         trenches: 'id, code, area, backfilled',
         strata: 'id, trenchId, code, type, topDepth',
@@ -50,6 +51,15 @@ class TrenchLogDb extends Dexie {
             }
           })
       })
+    // v3：新增「四壁剖面记录」表，按探方维护北/东/南/西四壁
+    this.version(SCHEMA_VERSION).stores({
+      trenches: 'id, code, area, backfilled',
+      strata: 'id, trenchId, code, type, topDepth',
+      artifacts: 'id, stratumId, code, category, date',
+      relations: 'id, unitAId, unitBId, type, basis',
+      wallRecords: 'id, trenchId, wall, confirmed',
+      meta: 'key'
+    })
   }
 }
 
@@ -229,6 +239,54 @@ export async function seedDemoData(): Promise<void> {
       basis: '剖面观察',
       recorder: '方铭',
       note: 'L01 叠压 L02，界面清晰'
+    }
+  ])
+
+  await db.wallRecords.bulkPut([
+    {
+      id: 'wr_tr_0501_北壁',
+      trenchId: 'tr_0501',
+      wall: '北壁',
+      recorder: '方铭',
+      drawingNo: 'T0501-北壁-01',
+      boundaries: [
+        { stratumId: 'st_0501_l1', topNote: '地表即①层顶，水平', bottomNote: '0.25 m 左右，与②层界面平整' },
+        { stratumId: 'st_0501_l2', topNote: '承接①层底界', bottomNote: '西侧下凹，被 H12 打破' },
+        { stratumId: 'st_0501_h12', topNote: '开口于②层下，锅底状', bottomNote: '1.4 m 见底，深灰褐土' }
+      ],
+      confirmed: true,
+      needsReview: false,
+      reviewStratumIds: [],
+      updatedAt: today
+    },
+    {
+      id: 'wr_tr_0501_东壁',
+      trenchId: 'tr_0501',
+      wall: '东壁',
+      recorder: '祁野',
+      drawingNo: 'T0501-东壁-01',
+      boundaries: [
+        { stratumId: 'st_0501_l1', topNote: '水平', bottomNote: '0.2～0.3 m，略有起伏' },
+        { stratumId: 'st_0501_l2', topNote: '承接①层底界', bottomNote: 'H12 开口线向东消失' }
+      ],
+      confirmed: false,
+      needsReview: false,
+      reviewStratumIds: [],
+      updatedAt: today
+    },
+    {
+      id: 'wr_tr_0501_西壁',
+      trenchId: 'tr_0501',
+      wall: '西壁',
+      recorder: '方铭',
+      drawingNo: 'T0501-西壁-01',
+      boundaries: [
+        { stratumId: 'st_0501_l2', topNote: '与①层分界清楚', bottomNote: '' }
+      ],
+      confirmed: false,
+      needsReview: true,
+      reviewStratumIds: ['st_0501_h12'],
+      updatedAt: today
     }
   ])
 }

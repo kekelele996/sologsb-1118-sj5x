@@ -9,12 +9,15 @@ import { trenchStore } from '@/stores/trenchStore'
 import { stratumStore } from '@/stores/stratumStore'
 import { artifactStore } from '@/stores/artifactStore'
 import { relationStore } from '@/stores/relationStore'
+import { wallStore } from '@/stores/wallStore'
+import { WALLS, isSectionComplete } from '@/types'
 import { uid } from '@/utils/id'
 
 const trenchState = useStore(trenchStore)
 const stratumState = useStore(stratumStore)
 const artifactState = useStore(artifactStore)
 const relationState = useStore(relationStore)
+const wallState = useStore(wallStore)
 
 const dialogVisible = ref(false)
 const editingId = ref<string | null>(null)
@@ -61,6 +64,26 @@ function artifactsOf(trenchId: string): number {
 function relationsOf(trenchId: string): number {
   const unitIds = stratumState.strata.filter((item) => item.trenchId === trenchId).map((item) => item.id)
   return relationState.relations.filter((item) => unitIds.includes(item.unitAId) || unitIds.includes(item.unitBId)).length
+}
+
+/** 四壁剖面记录 */
+function wallRecordsOf(trenchId: string) {
+  return WALLS.map((wall) => wallState.wallRecords.find((item) => item.trenchId === trenchId && item.wall === wall))
+}
+
+/** 已确认壁数 */
+function confirmedWallsOf(trenchId: string): number {
+  return wallRecordsOf(trenchId).filter((record) => record?.confirmed && !record.needsReview).length
+}
+
+/** 待复核壁数 */
+function reviewWallsOf(trenchId: string): number {
+  return wallRecordsOf(trenchId).filter((record) => record?.needsReview).length
+}
+
+/** 四壁是否全部确认（剖面完成） */
+function sectionDoneOf(trenchId: string): boolean {
+  return isSectionComplete(wallRecordsOf(trenchId).filter((item): item is NonNullable<typeof item> => !!item))
 }
 
 /** 发掘进度状态 */
@@ -173,13 +196,19 @@ async function remove(trench: Trench): Promise<void> {
       <el-card v-for="trench in visible" :key="trench.id" shadow="hover" class="trench-card">
         <div class="card-top">
           <TrenchTag :trench="trench" />
-          <el-tag :type="progressOf(trench).type" size="small" effect="plain">{{ progressOf(trench).label }}</el-tag>
+          <div class="top-tags">
+            <el-tag v-if="sectionDoneOf(trench.id)" type="success" size="small" effect="dark">剖面完成</el-tag>
+            <el-tag v-else-if="reviewWallsOf(trench.id) > 0" type="danger" size="small" effect="plain">剖面待复核</el-tag>
+            <el-tag :type="progressOf(trench).type" size="small" effect="plain">{{ progressOf(trench).label }}</el-tag>
+          </div>
         </div>
         <div class="metrics">
           <div class="metric"><span>地层单位</span><b>{{ unitsOf(trench.id) }}</b></div>
           <div class="metric"><span>出土物件数</span><b>{{ artifactsOf(trench.id) }}</b></div>
           <div class="metric"><span>层位关系</span><b>{{ relationsOf(trench.id) }}</b></div>
-          <div class="metric"><span>规格</span><b>{{ trench.size }}</b></div>
+          <div class="metric" :class="{ done: sectionDoneOf(trench.id) }">
+            <span>已确认壁面</span><b>{{ confirmedWallsOf(trench.id) }} / 4</b>
+          </div>
         </div>
         <el-descriptions :column="1" size="small" border class="desc">
           <el-descriptions-item label="基点坐标">{{ trench.basePoint || '—' }}</el-descriptions-item>
@@ -189,6 +218,13 @@ async function remove(trench: Trench): Promise<void> {
           </el-descriptions-item>
           <el-descriptions-item label="负责人">{{ trench.leader || '—' }}</el-descriptions-item>
           <el-descriptions-item label="四壁方向备注">{{ trench.wallNote || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="四壁剖面">
+            <el-tag v-if="sectionDoneOf(trench.id)" type="success" size="small" effect="plain">四壁已确认 · 剖面完成</el-tag>
+            <el-tag v-else-if="reviewWallsOf(trench.id) > 0" type="danger" size="small" effect="plain">
+              已确认 {{ confirmedWallsOf(trench.id) }}/4 · {{ reviewWallsOf(trench.id) }} 壁待复核
+            </el-tag>
+            <el-tag v-else type="warning" size="small" effect="plain">已确认 {{ confirmedWallsOf(trench.id) }}/4 · 待补录</el-tag>
+          </el-descriptions-item>
         </el-descriptions>
         <div class="card-actions">
           <el-button size="small" @click="openEdit(trench)">编辑</el-button>
@@ -279,6 +315,11 @@ async function remove(trench: Trench): Promise<void> {
   gap: 8px;
   margin-bottom: 10px;
 }
+.top-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .metrics {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -298,6 +339,12 @@ async function remove(trench: Trench): Promise<void> {
 .metric b {
   font-size: 14px;
   color: #3c2f1f;
+}
+.metric.done {
+  background: #eef7e8;
+}
+.metric.done b {
+  color: #4a8a2c;
 }
 .desc {
   margin-bottom: 12px;

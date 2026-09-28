@@ -6,12 +6,14 @@ import { trenchStore } from '@/stores/trenchStore'
 import { stratumStore } from '@/stores/stratumStore'
 import { artifactStore } from '@/stores/artifactStore'
 import { relationStore } from '@/stores/relationStore'
+import { wallStore } from '@/stores/wallStore'
 
 const route = useRoute()
 const trenchState = useStore(trenchStore)
 const stratumState = useStore(stratumStore)
 const artifactState = useStore(artifactStore)
 const relationState = useStore(relationStore)
+const wallState = useStore(wallStore)
 
 const menus = [
   { path: '/trenches', label: '探方清单', icon: 'Grid' },
@@ -27,7 +29,8 @@ const stats = computed(() => [
   { label: '探方', value: trenchState.trenches.length },
   { label: '地层单位', value: stratumState.strata.length },
   { label: '出土物', value: artifactState.artifacts.length },
-  { label: '层位关系', value: relationState.relations.length }
+  { label: '层位关系', value: relationState.relations.length },
+  { label: '已确认壁面', value: wallState.wallRecords.filter((item) => item.confirmed && !item.needsReview).length }
 ])
 
 onMounted(async () => {
@@ -35,6 +38,7 @@ onMounted(async () => {
   await stratumStore.getState().hydrate()
   await artifactStore.getState().hydrate()
   await relationStore.getState().hydrate()
+  await wallStore.getState().hydrate()
 })
 </script>
 

@@ -1,6 +1,7 @@
 import { createStore } from 'zustand/vanilla'
 import type { Trench } from '@/types'
 import { db, syncAll, syncDelete, syncPut } from '@/hooks/usePersistentStore'
+import { wallStore } from './wallStore'
 
 export interface TrenchState {
   trenches: Trench[]
@@ -25,6 +26,8 @@ export const trenchStore = createStore<TrenchState>((set, get) => ({
   },
   remove: async (id) => {
     await syncDelete<Trench>(db.trenches, id)
+    // 连带删除该探方的四壁剖面记录
+    await wallStore.getState().removeByTrench(id)
     await get().hydrate()
   },
   setBackfilled: async (id, backfilled) => {

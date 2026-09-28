@@ -162,9 +162,11 @@ async function submit(): Promise<void> {
     date: form.date,
     drawingNo: form.drawingNo.trim()
   }
-  await stratumStore.getState().save(row)
+  const affectedWalls = await stratumStore.getState().save(row)
   if (isDepthInverted(row)) {
     ElMessage.warning(`已保存，但「${row.code}」上界深度大于下界，层序倒置需复核`)
+  } else if (affectedWalls > 0) {
+    ElMessage.warning(`「${row.code}」深度已改动，该探方 ${affectedWalls} 个已留痕壁面已标为待复核，复核确认前剖面不计完成`)
   } else {
     ElMessage.success(`地层单位 ${row.code} 已保存（厚 ${stratumThickness(row)} m）`)
   }
